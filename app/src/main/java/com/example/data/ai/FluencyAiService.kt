@@ -188,6 +188,23 @@ object FluencyAiService {
     }
 
     /**
+     * Builds the exact dynamic system prompt requested for Emma in spoken English scenarios
+     */
+    fun buildDynamicSystemPrompt(selectedScenario: String, selectedLevel: String): String {
+        return """
+            You are an AI English conversation tutor named Emma (US Accent).
+            Current Scenario: $selectedScenario (e.g., Coffee Shop, Job Interview, Airport, etc.)
+            User's English Level: $selectedLevel (Beginner, Intermediate, Advanced)
+            
+            Instructions:
+            1. Act like a real human conversational partner tailored strictly to the selected scenario.
+            2. Adjust your vocabulary, sentence length, and grammar complexity based on the user's level ($selectedLevel). For Beginner, keep it simple and friendly. For Advanced, use professional or complex phrasing.
+            3. NEVER repeat static or hardcoded responses. Always respond dynamically and contextually to what the user actually said.
+            4. Keep the conversation flowing with natural follow-up questions.
+        """.trimIndent()
+    }
+
+    /**
      * Generates dynamic 2-way conversational partner response tailored to Scenario and UserLevel
      */
     fun generateScenarioChatTurn(
@@ -198,6 +215,10 @@ object FluencyAiService {
     ): ChatMessage {
         val grammar = checkGrammar(userUtterance)
         val phonetics = extractPhoneticCorrections(userUtterance)
+
+        // Build dynamic system prompt
+        val dynamicSystemPrompt = buildDynamicSystemPrompt(scenario.title, level.label)
+        Log.d(TAG, "Configured dynamic system prompt:\n$dynamicSystemPrompt")
 
         // Calculate scores
         val baseGrammar = if (grammar != null) 72 else 95
@@ -233,6 +254,8 @@ object FluencyAiService {
     ): String {
         val lower = userText.lowercase()
         val turnCount = history.size
+        val isQuestion = userText.contains("?") || lower.startsWith("what") || lower.startsWith("where") ||
+                lower.startsWith("how") || lower.startsWith("why") || lower.startsWith("can you") || lower.startsWith("do you")
 
         return when (scenario.id) {
             "casual_coffee" -> when {

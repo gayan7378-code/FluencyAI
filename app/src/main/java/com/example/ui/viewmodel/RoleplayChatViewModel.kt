@@ -38,6 +38,12 @@ class RoleplayChatViewModel(application: Application) : AndroidViewModel(applica
     private val _inspectedMessage = MutableStateFlow<ChatMessage?>(null)
     val inspectedMessage: StateFlow<ChatMessage?> = _inspectedMessage.asStateFlow()
 
+    val currentDynamicPrompt: String
+        get() = FluencyAiService.buildDynamicSystemPrompt(
+            selectedScenario = _selectedScenario.value.title,
+            selectedLevel = _selectedLevel.value.label
+        )
+
     init {
         startScenario(scenarios.first(), UserLevel.INTERMEDIATE)
 
