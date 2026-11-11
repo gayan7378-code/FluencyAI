@@ -83,6 +83,25 @@ fun RoleplayChatScreen(
     val speechState by viewModel.speechManager.speechState.collectAsState()
     val soundLevel by viewModel.speechManager.soundLevel.collectAsState()
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var hasMicPermission by remember {
+        mutableStateOf(
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val micPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasMicPermission = isGranted
+        if (isGranted) {
+            viewModel.startListening()
+        }
+    }
+
     var textInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
@@ -294,6 +313,41 @@ fun RoleplayChatScreen(
             }
         }
 
+        // Speech Recognition Error Banner
+        val speechError = (speechState as? SpeechState.Error)?.message
+        AnimatedVisibility(visible = speechError != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = speechError ?: "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = { viewModel.speechManager.resetState() },
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+        }
+
         // Bottom Input Dock
         Row(
             modifier = Modifier
@@ -303,14 +357,22 @@ fun RoleplayChatScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Big Pulsing Mic Button
+            // Big Pulsing Mic Button (SpeechRecognizer)
             Box(
                 modifier = Modifier
                     .size(50.dp)
                     .clip(CircleShape)
                     .background(if (isListening) MaterialTheme.colorScheme.error else PrimaryBlue)
                     .clickable {
-                        if (isListening) viewModel.stopListening() else viewModel.startListening()
+                        if (isListening) {
+                            viewModel.stopListening()
+                        } else {
+                            if (hasMicPermission) {
+                                viewModel.startListening()
+                            } else {
+                                micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                            }
+                        }
                     }
                     .testTag("roleplay_mic_button"),
                 contentAlignment = Alignment.Center
@@ -453,42 +515,98 @@ fun ChatMessageItem(
                     }
                 }
 
-                // If this is an AI response that corrected the previous user turn:
-                if (message.grammarCorrection != null) {
+                // Percentage-based Pronunciation Score Badge after User Responses
+                if (isUser && message.phonemeAnalysis != null) {
+                    val analysis = message.phonemeAnalysis
+                    val pct = analysis.overallPercentage
+                    val badgeColor = when {
+                        pct >= 85 -> AccentGreen
+                        pct >= 70 -> AccentAmber
+                        else -> AccentRose
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(AccentRose.copy(alpha = 0.12f))
-                            .border(1.dp, AccentRose.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(badgeColor.copy(alpha = 0.12f))
+                            .border(1.dp, badgeColor.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
                             .padding(8.dp)
                     ) {
                         Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "🎯 Pronunciation Score:",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "$pct%",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold, fontSize = 13.sp),
+                                        color = badgeColor
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(badgeColor)
+                                        .clickable { onInspectFeedback() }
+                                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        text = "Phoneme Analysis",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
                                 Text(
-                                    text = "Correction: ",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = AccentRose
+                                    text = "Vowels: ${analysis.vowelsPercentage}%",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = "\"${message.grammarCorrection.originalText}\" → \"${message.grammarCorrection.correctedText}\"",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    text = "Consonants: ${analysis.consonantsPercentage}%",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Stress: ${analysis.stressCadencePercentage}%",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Text(
-                                text = "🇱🇰 ${message.grammarCorrection.sinhalaExplanation}",
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+
+                            if (analysis.phonemeScores.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Expected Phonemes: " + analysis.phonemeScores.joinToString(" • ") { "${it.phonemeIpa} (${it.scorePercentage}%)" },
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                                )
+                            }
                         }
                     }
                 }
 
-                // Inspection CTA Button
-                if (message.scores != null || message.grammarCorrection != null || message.phoneticCorrections.isNotEmpty()) {
+                // Inspection CTA Button (for AI responses)
+                if (!isUser && (message.scores != null || message.grammarCorrection != null || message.phoneticCorrections.isNotEmpty())) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -593,7 +711,96 @@ fun PronunciationFeedbackSheetContent(
             }
         }
 
-        // Sinhala Grammar Correction Section
+        // Detailed Phoneme Alignment Analysis Section
+        if (message.phonemeAnalysis != null) {
+            val analysis = message.phonemeAnalysis
+            Spacer(modifier = Modifier.height(14.dp))
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = PrimaryBlue.copy(alpha = 0.08f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, PrimaryBlue.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Phoneme Alignment Analysis 🎯",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = PrimaryBlue
+                        )
+                        Text(
+                            text = "${analysis.overallPercentage}% Accuracy",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                            color = PrimaryBlue
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = analysis.feedbackSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Analyzed Sound Segments:",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    analysis.phonemeScores.forEach { phoneme ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = phoneme.phonemeIpa,
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = if (phoneme.isAccurate) AccentGreen else AccentAmber
+                                    )
+                                    Text(
+                                        text = "in \"${phoneme.word}\"",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Text(
+                                    text = phoneme.feedbackTip,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Text(
+                                text = "${phoneme.scorePercentage}%",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                ),
+                                color = if (phoneme.isAccurate) AccentGreen else AccentAmber
+                            )
+                        }
+                    }
+                }
+            }
+        }
         if (message.grammarCorrection != null) {
             Spacer(modifier = Modifier.height(16.dp))
             Card(

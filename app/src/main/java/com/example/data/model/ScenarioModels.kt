@@ -26,6 +26,23 @@ data class TurnScores(
     val grammarScore: Int // 0 - 100
 )
 
+data class PhonemeScore(
+    val phonemeIpa: String, // e.g. "/θ/", "/æ/", "/l/"
+    val word: String,       // Word containing this phoneme
+    val scorePercentage: Int, // 0 - 100%
+    val isAccurate: Boolean,
+    val feedbackTip: String
+)
+
+data class PhonemeAnalysisResult(
+    val overallPercentage: Int, // 0 - 100%
+    val vowelsPercentage: Int,  // 0 - 100%
+    val consonantsPercentage: Int, // 0 - 100%
+    val stressCadencePercentage: Int, // 0 - 100%
+    val phonemeScores: List<PhonemeScore> = emptyList(),
+    val feedbackSummary: String = ""
+)
+
 data class ChatMessage(
     val id: String = System.currentTimeMillis().toString(),
     val isUser: Boolean,
@@ -34,7 +51,8 @@ data class ChatMessage(
     val scores: TurnScores? = null,
     val grammarCorrection: GrammarCorrection? = null,
     val phoneticCorrections: List<PhoneticCorrection> = emptyList(),
-    val nativeUpgradeAlternative: String? = null
+    val nativeUpgradeAlternative: String? = null,
+    val phonemeAnalysis: PhonemeAnalysisResult? = null
 )
 
 data class AiScenario(
@@ -47,4 +65,13 @@ data class AiScenario(
     val userRole: String,
     val initialGreeting: String,
     val suggestedTopics: List<String>
+)
+
+data class AiResponse(
+    val replyText: String,
+    val correction: GrammarCorrection? = null,
+    val formattedCorrectionBlock: String? = null,
+    val sinhalaExplanation: String? = null,
+    val phoneticCorrections: List<PhoneticCorrection> = emptyList(),
+    val scores: TurnScores? = null
 )

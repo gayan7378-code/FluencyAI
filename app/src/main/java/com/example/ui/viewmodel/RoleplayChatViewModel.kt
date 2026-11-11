@@ -10,6 +10,7 @@ import com.example.data.ai.FluencyAiService
 import com.example.data.model.AiScenario
 import com.example.data.model.ChatMessage
 import com.example.data.model.ScenarioData
+import com.example.data.model.TurnScores
 import com.example.data.model.UserLevel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,19 +40,21 @@ class RoleplayChatViewModel(application: Application) : AndroidViewModel(applica
     val inspectedMessage: StateFlow<ChatMessage?> = _inspectedMessage.asStateFlow()
 
     val currentDynamicPrompt: String
-        get() = FluencyAiService.buildDynamicSystemPrompt(
-            selectedScenario = _selectedScenario.value.title,
-            selectedLevel = _selectedLevel.value.label
+        get() = FluencyAiService.getSystemPrompt(
+            scenario = _selectedScenario.value.title,
+            level = _selectedLevel.value.label
         )
 
     init {
         startScenario(scenarios.first(), UserLevel.INTERMEDIATE)
 
-        // Observe speech results
+        // Observe Android SpeechRecognizer results and pass recognized speech directly to FluencyAiService
         viewModelScope.launch {
             speechManager.speechState.collect { state ->
                 if (state is SpeechState.Success && state.recognizedText.isNotBlank()) {
-                    sendMessage(state.recognizedText)
+                    val userSpeech = state.recognizedText.trim()
+                    speechManager.resetState()
+                    sendMessage(userSpeech)
                 }
             }
         }
@@ -81,10 +84,19 @@ class RoleplayChatViewModel(application: Application) : AndroidViewModel(applica
         if (userText.isBlank()) return
         ttsManager.stop()
 
+        // Run pronunciation scoring algorithm comparing input to expected phonemes
+        val phonemeAnalysis = com.example.audio.PhonemeScoringEngine.analyzeSpeech(userText)
+
         val userMessage = ChatMessage(
             isUser = true,
             text = userText.trim(),
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            scores = TurnScores(
+                fluencyScore = phonemeAnalysis.stressCadencePercentage,
+                pronunciationScore = phonemeAnalysis.overallPercentage,
+                grammarScore = 95
+            ),
+            phonemeAnalysis = phonemeAnalysis
         )
         val currentList = _messages.value + userMessage
         _messages.value = currentList
@@ -94,24 +106,35 @@ class RoleplayChatViewModel(application: Application) : AndroidViewModel(applica
             val scenario = _selectedScenario.value
             val level = _selectedLevel.value
 
-            // Generate contextual AI response with Sinhala grammar analysis and phonetics
-            val aiResponse = FluencyAiService.generateScenarioChatTurn(
-                scenario = scenario,
-                level = level,
-                history = currentList,
-                userUtterance = userText
+            // Direct API call to Gemini with user message and conversation history
+            val aiResponse = FluencyAiService.getAiResponse(
+                userMessage = userText,
+                scenario = scenario.title,
+                level = level.label,
+                history = currentList
             )
 
-            _messages.value = _messages.value + aiResponse
+            val nativeAlternative = FluencyAiService.buildNativeAlternative(userText, level)
+
+            val aiMessage = ChatMessage(
+                isUser = false,
+                text = aiResponse.replyText,
+                scores = aiResponse.scores,
+                grammarCorrection = aiResponse.correction,
+                phoneticCorrections = aiResponse.phoneticCorrections,
+                nativeUpgradeAlternative = nativeAlternative
+            )
+
+            _messages.value = _messages.value + aiMessage
             _isAiThinking.value = false
 
             // Auto-inspect if grammar error was found so user sees the Sinhala explanation immediately!
-            if (aiResponse.grammarCorrection != null) {
-                _inspectedMessage.value = aiResponse
+            if (aiMessage.grammarCorrection != null) {
+                _inspectedMessage.value = aiMessage
             }
 
             // Speak AI response
-            ttsManager.speak(aiResponse.text, aiResponse.id)
+            ttsManager.speak(aiMessage.text, aiMessage.id)
         }
     }
 

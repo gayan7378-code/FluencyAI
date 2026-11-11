@@ -2,5 +2,7 @@
   "name": "SpeakFlow",
   "description": "Interactive spoken English app with speech recognition, pronunciation accuracy scoring, interactive dialogues, phonetics training, and daily speaking workouts.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

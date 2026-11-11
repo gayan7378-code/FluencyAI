@@ -44,4 +44,32 @@ class ExampleUnitTest {
 
         assertTrue(eval.words.isNotEmpty())
     }
+
+    @Test
+    fun testFluencyAiServiceSystemPrompt() {
+        val prompt = com.example.data.ai.FluencyAiService.getSystemPrompt("Coffee Shop", "Beginner")
+        assertTrue("Prompt must introduce tutor Mili", prompt.contains("Mili"))
+        assertTrue("Prompt must include Coffee Shop scenario", prompt.contains("Coffee Shop"))
+        assertTrue("Prompt must include Sinhala instructions", prompt.contains("Sinhala:"))
+        assertTrue("Prompt must include Correction format", prompt.contains("Correction:"))
+    }
+
+    @Test
+    fun testGrammarCorrectionDetection() {
+        val correction = com.example.data.ai.FluencyAiService.checkGrammar("I am agree with your proposal")
+        assertTrue("Must detect 'I am agree' mistake", correction != null)
+        assertEquals("I agree", correction?.correctedText)
+        assertTrue("Must include Sinhala explanation", correction?.sinhalaExplanation?.isNotBlank() == true)
+    }
+
+    @Test
+    fun testPhonemeScoringEnginePercentageScores() {
+        val analysis = com.example.audio.PhonemeScoringEngine.analyzeSpeech("I think this coffee is very good")
+        assertTrue("Overall score must be in percentage range 0..100", analysis.overallPercentage in 70..100)
+        assertTrue("Vowels percentage must be in range 0..100", analysis.vowelsPercentage in 70..100)
+        assertTrue("Consonants percentage must be in range 0..100", analysis.consonantsPercentage in 70..100)
+        assertTrue("Phonemes list must not be empty", analysis.phonemeScores.isNotEmpty())
+        assertTrue("Must include IPA symbols", analysis.phonemeScores.any { it.phonemeIpa.startsWith("/") })
+        assertTrue("Must have articulatory feedback", analysis.phonemeScores.all { it.feedbackTip.isNotBlank() })
+    }
 }
